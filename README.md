@@ -1,6 +1,6 @@
 <div align="center">
 
-# huntd
+# 🐺 huntd
 
 **Your coding fingerprint — local git analytics dashboard for all your repos.**
 
