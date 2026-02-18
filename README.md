@@ -60,6 +60,25 @@ huntd --compare ~/work ~/personal --summary
 huntd ~/code --json --author "Joe" --since 2025-01-01
 ```
 
+## Sharing & Export
+
+```bash
+# Spotify Wrapped-style SVG card
+huntd ~/code --wrapped
+
+# Clean markdown report (for Notion, blogs, performance reviews)
+huntd ~/code --report
+
+# SVG badge for GitHub profile READMEs
+huntd ~/code --badge
+
+# Combine with filters
+huntd ~/code --wrapped --since 2025-01-01
+
+# Generate all three at once
+huntd ~/code --wrapped --report --badge
+```
+
 ## What You Get
 
 ```
@@ -188,6 +207,9 @@ huntd ~/code --json --author "Joe" --since 2025-01-01
 | **Weekday vs weekend** | Split activity by work days vs weekends with percentages |
 | **File hotspots** | Most-churned files across all repos (find your messiest code) |
 | **Achievements** | 10 unlockable badges — Century, Polyglot, Night Owl, and more |
+| **Wrapped card** | `--wrapped` generates a Spotify Wrapped-style SVG card |
+| **Markdown report** | `--report` exports a clean report for Notion, blogs, reviews |
+| **Profile badge** | `--badge` generates an SVG badge for GitHub READMEs |
 
 ## How It Works
 

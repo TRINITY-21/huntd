@@ -541,6 +541,21 @@ def main() -> None:
         help="Compare two directories side by side (use with --summary or --json)",
     )
     parser.add_argument(
+        "--wrapped",
+        action="store_true",
+        help="Generate a Wrapped-style SVG card (saves huntd-wrapped.svg)",
+    )
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="Export a markdown report (saves huntd-report.md)",
+    )
+    parser.add_argument(
+        "--badge",
+        action="store_true",
+        help="Generate an SVG badge for GitHub READMEs (saves huntd-badge.svg)",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"huntd {__version__}",
@@ -555,6 +570,36 @@ def main() -> None:
             compare_json(args.compare[0], args.compare[1], **filters)
         else:
             compare_summary(args.compare[0], args.compare[1], **filters)
+        return
+
+    # Export modes
+    if args.wrapped or args.report or args.badge:
+        from huntd.export import generate_badge_svg, generate_report_md, generate_wrapped_svg
+
+        repos = _scan_all(args.path, **filters)
+        if not repos:
+            print("No git repos found.", file=sys.stderr)
+            return
+        analytics = build_analytics(repos)
+
+        if args.wrapped:
+            svg = generate_wrapped_svg(analytics)
+            with open("huntd-wrapped.svg", "w") as f:
+                f.write(svg)
+            print("  Saved huntd-wrapped.svg", file=sys.stderr)
+
+        if args.report:
+            md = generate_report_md(analytics)
+            with open("huntd-report.md", "w") as f:
+                f.write(md)
+            print("  Saved huntd-report.md", file=sys.stderr)
+
+        if args.badge:
+            badge = generate_badge_svg(analytics)
+            with open("huntd-badge.svg", "w") as f:
+                f.write(badge)
+            print("  Saved huntd-badge.svg", file=sys.stderr)
+
         return
 
     # Normal mode
