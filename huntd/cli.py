@@ -496,6 +496,40 @@ def compare_json(
     print(json.dumps(data, indent=2))
 
 
+def _install_hooks(scan_path: str) -> None:
+    """Install a post-commit hook in all repos under scan_path."""
+    import os
+    import stat
+
+    repo_paths = find_repos(scan_path)
+    if not repo_paths:
+        print("No git repos found.", file=sys.stderr)
+        return
+
+    hook_script = '#!/bin/sh\n# huntd post-commit hook — triggers dashboard refresh\necho "[huntd] commit recorded" >/dev/null\n'
+
+    installed = 0
+    for rp in repo_paths:
+        hooks_dir = os.path.join(rp, ".git", "hooks")
+        hook_path = os.path.join(hooks_dir, "post-commit")
+
+        if os.path.exists(hook_path):
+            name = rp.split("/")[-1]
+            print(f"  Skipped {name} (post-commit hook already exists)", file=sys.stderr)
+            continue
+
+        os.makedirs(hooks_dir, exist_ok=True)
+        with open(hook_path, "w") as f:
+            f.write(hook_script)
+        os.chmod(hook_path, os.stat(hook_path).st_mode | stat.S_IEXEC)
+        name = rp.split("/")[-1]
+        print(f"  Installed hook in {name}", file=sys.stderr)
+        installed += 1
+
+    print(f"\n  Done: {installed} hooks installed, {len(repo_paths) - installed} skipped.",
+          file=sys.stderr)
+
+
 def main() -> None:
     """Entry point for the huntd CLI."""
     parser = argparse.ArgumentParser(
@@ -556,6 +590,23 @@ def main() -> None:
         help="Generate an SVG badge for GitHub READMEs (saves huntd-badge.svg)",
     )
     parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Live mode — auto-refresh TUI dashboard on an interval",
+    )
+    parser.add_argument(
+        "--interval",
+        type=int,
+        default=30,
+        metavar="SECS",
+        help="Refresh interval in seconds for --watch mode (default: 30)",
+    )
+    parser.add_argument(
+        "--install-hook",
+        action="store_true",
+        help="Install a post-commit git hook in all scanned repos",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"huntd {__version__}",
@@ -602,6 +653,11 @@ def main() -> None:
 
         return
 
+    # Install hook mode
+    if args.install_hook:
+        _install_hooks(args.path)
+        return
+
     # Normal mode
     if args.json_output:
         print_json(args.path, **filters)
@@ -609,7 +665,7 @@ def main() -> None:
         print_summary(args.path, **filters)
     else:
         from huntd.tui import run_tui
-        run_tui(args.path, **filters)
+        run_tui(args.path, **filters, watch=args.watch, interval=args.interval)
 
 
 if __name__ == "__main__":

@@ -79,6 +79,24 @@ huntd ~/code --wrapped --since 2025-01-01
 huntd ~/code --wrapped --report --badge
 ```
 
+## Live Mode
+
+Keep the dashboard running and watch it update as you commit.
+
+```bash
+# Auto-refresh dashboard every 30 seconds
+huntd ~/code --watch
+
+# Custom interval (seconds)
+huntd ~/code --watch --interval 60
+
+# Toggle watch on/off inside the TUI with 'w'
+# Press 'w' to start/stop live refresh anytime
+
+# Install post-commit hooks across all repos
+huntd ~/code --install-hook
+```
+
 ## What You Get
 
 ```
@@ -210,6 +228,9 @@ huntd ~/code --wrapped --report --badge
 | **Wrapped card** | `--wrapped` generates a Spotify Wrapped-style SVG card |
 | **Markdown report** | `--report` exports a clean report for Notion, blogs, reviews |
 | **Profile badge** | `--badge` generates an SVG badge for GitHub READMEs |
+| **Live mode** | `--watch` auto-refreshes the dashboard as you commit |
+| **Custom interval** | `--interval N` sets refresh frequency in seconds |
+| **Git hooks** | `--install-hook` adds post-commit hooks to all scanned repos |
 
 ## How It Works
 

@@ -509,6 +509,7 @@ class HuntdApp(App):
     BINDINGS = [
         Binding("q", "quit", "Quit"),
         Binding("r", "refresh", "Refresh"),
+        Binding("w", "toggle_watch", "Watch"),
         Binding("tab", "focus_next", "Next Panel"),
         Binding("shift+tab", "focus_previous", "Prev Panel"),
     ]
@@ -520,13 +521,18 @@ class HuntdApp(App):
         since: str | None = None,
         until: str | None = None,
         author: str | None = None,
+        watch: bool = False,
+        interval: int = 30,
     ) -> None:
         super().__init__()
         self.scan_path = scan_path
         self.since = since
         self.until = until
         self.author = author
+        self.watch = watch
+        self.interval = interval
         self.analytics: Optional[Analytics] = None
+        self._watch_timer = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -669,6 +675,27 @@ class HuntdApp(App):
         hotspots.update_data(analytics)
         achievements.update_data(analytics)
 
+        # Start watch timer after first render
+        if self.watch and self._watch_timer is None:
+            self._watch_timer = self.set_interval(self.interval, self._auto_refresh)
+            self.sub_title = f"live — refreshing every {self.interval}s"
+
+    def _auto_refresh(self) -> None:
+        """Silent auto-refresh triggered by watch timer."""
+        self.action_refresh()
+
+    def action_toggle_watch(self) -> None:
+        """Toggle watch mode on/off."""
+        if self._watch_timer is not None:
+            self._watch_timer.stop()
+            self._watch_timer = None
+            self.watch = False
+            self.sub_title = "your coding fingerprint"
+        else:
+            self.watch = True
+            self._watch_timer = self.set_interval(self.interval, self._auto_refresh)
+            self.sub_title = f"live — refreshing every {self.interval}s"
+
 
 def run_tui(
     scan_path: str,
@@ -676,7 +703,12 @@ def run_tui(
     since: str | None = None,
     until: str | None = None,
     author: str | None = None,
+    watch: bool = False,
+    interval: int = 30,
 ) -> None:
     """Launch the huntd TUI dashboard."""
-    app = HuntdApp(scan_path, since=since, until=until, author=author)
+    app = HuntdApp(
+        scan_path, since=since, until=until, author=author,
+        watch=watch, interval=interval,
+    )
     app.run()
