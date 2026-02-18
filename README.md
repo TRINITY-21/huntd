@@ -298,6 +298,14 @@ Each repo gets a 0-100 health score based on:
 
 **huntd** is the first tool to combine multi-repo scanning + streaks + heatmaps + language trends + health scores in one interactive dashboard. Free. Local. Instant.
 
+## VS Code Extension
+
+Get huntd right in your editor sidebar.
+
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/JosephYawAgyeman.huntd?style=flat-square&label=VS%20Code&color=blue)](https://marketplace.visualstudio.com/items?itemName=JosephYawAgyeman.huntd)
+
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=JosephYawAgyeman.huntd) or search "huntd" in the extensions panel. Source: [huntd-vscode](https://github.com/TRINITY-21/huntd-vscode)
+
 ## Development
 
 ```bash
