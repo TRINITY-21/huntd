@@ -259,6 +259,7 @@ class LanguageEvolutionPanel(PlotextPlot):
             return
 
         month_keys = sorted(le.monthly.keys())[-12:]
+        x_indices = list(range(len(month_keys)))
         color_map = [
             (57, 211, 83), (88, 166, 255), (188, 140, 255), (227, 179, 65),
             (248, 81, 73), (240, 136, 62), (57, 211, 83), (88, 166, 255),
@@ -267,8 +268,9 @@ class LanguageEvolutionPanel(PlotextPlot):
         for i, lang in enumerate(le.top_languages[:6]):
             values = [le.monthly[mk].get(lang, 0) for mk in month_keys]
             if any(values):
-                plt.plot(month_keys, values, label=lang, color=color_map[i % len(color_map)])
+                plt.plot(x_indices, values, label=lang, color=color_map[i % len(color_map)])
 
+        plt.xticks(x_indices, month_keys)
         plt.title("Language Lines Changed")
         plt.xlabel("Month")
         self.refresh()
