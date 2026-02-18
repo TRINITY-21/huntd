@@ -79,6 +79,18 @@ huntd ~/code --wrapped --since 2025-01-01
 huntd ~/code --wrapped --report --badge
 ```
 
+### Wrapped Card
+
+<p align="center">
+  <img src="huntd-wrapped.svg" alt="huntd wrapped card" width="500">
+</p>
+
+### Profile Badge
+
+<p align="center">
+  <img src="huntd-badge.svg" alt="huntd badge">
+</p>
+
 ## Live Mode
 
 Keep the dashboard running and watch it update as you commit.
