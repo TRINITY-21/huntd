@@ -27,6 +27,7 @@ from huntd.theme import (
     CYAN,
     GREEN,
     MUTED,
+    ORANGE,
     PURPLE,
     RED,
     SURFACE,
@@ -211,6 +212,134 @@ class RepoTable(DataTable):
             )
 
 
+class CodeVelocityPanel(PlotextPlot):
+    """Weekly commit count bar chart."""
+
+    def update_data(self, analytics: Analytics) -> None:
+        plt = self.plt
+        plt.clear_figure()
+        plt.theme("dark")
+
+        cv = analytics.code_velocity
+        if not cv.commits_by_week:
+            plt.title("No velocity data")
+            self.refresh()
+            return
+
+        weeks = sorted(cv.commits_by_week.keys())[-16:]
+        values = [cv.commits_by_week[w] for w in weeks]
+        labels = [w.split("-W")[1] if "-W" in w else w for w in weeks]
+
+        if cv.trend == "up":
+            color = (57, 211, 83)
+        elif cv.trend == "down":
+            color = (248, 81, 73)
+        else:
+            color = (88, 166, 255)
+
+        plt.bar(labels, values, color=color)
+        plt.title(f"Weekly Commits ({cv.trend})")
+        plt.xlabel("ISO Week")
+        self.refresh()
+
+
+class LanguageEvolutionPanel(PlotextPlot):
+    """Language mix over time — multi-line chart."""
+
+    def update_data(self, analytics: Analytics) -> None:
+        plt = self.plt
+        plt.clear_figure()
+        plt.theme("dark")
+
+        le = analytics.language_evolution
+        if not le.monthly or not le.top_languages:
+            plt.title("No language evolution data")
+            self.refresh()
+            return
+
+        month_keys = sorted(le.monthly.keys())[-12:]
+        color_map = [
+            (57, 211, 83), (88, 166, 255), (188, 140, 255), (227, 179, 65),
+            (248, 81, 73), (240, 136, 62), (57, 211, 83), (88, 166, 255),
+        ]
+
+        for i, lang in enumerate(le.top_languages[:6]):
+            values = [le.monthly[mk].get(lang, 0) for mk in month_keys]
+            if any(values):
+                plt.plot(month_keys, values, label=lang, color=color_map[i % len(color_map)])
+
+        plt.title("Language Lines Changed")
+        plt.xlabel("Month")
+        self.refresh()
+
+
+class FocusScorePanel(Static):
+    """Focus score display."""
+
+    def update_data(self, analytics: Analytics) -> None:
+        fs = analytics.focus_score
+        text = Text()
+
+        if fs.avg_repos_per_day == 0:
+            text.append("  No focus data", style=Style(color=MUTED))
+            self.update(text)
+            return
+
+        if fs.interpretation == "deep focus":
+            score_color = GREEN
+        elif fs.interpretation == "balanced":
+            score_color = YELLOW
+        else:
+            score_color = RED
+
+        text.append("  Avg repos/day: ", style=Style(color=MUTED))
+        text.append(f"{fs.avg_repos_per_day}", style=Style(color=CYAN, bold=True))
+        text.append(f"  [{fs.interpretation}]", style=Style(color=score_color, bold=True))
+        text.append("\n  Most focused:   ", style=Style(color=MUTED))
+        text.append(fs.most_focused_day, style=Style(color=GREEN, bold=True))
+        text.append("\n  Most scattered: ", style=Style(color=MUTED))
+        text.append(fs.most_scattered_day, style=Style(color=YELLOW, bold=True))
+
+        self.update(text)
+
+
+class WorkdaySplitPanel(Static):
+    """Weekday vs weekend commit split."""
+
+    def update_data(self, analytics: Analytics) -> None:
+        ws = analytics.workday_split
+        text = Text()
+
+        total = ws.weekday_commits + ws.weekend_commits
+        if total == 0:
+            text.append("  No split data", style=Style(color=MUTED))
+            self.update(text)
+            return
+
+        text.append("  Weekday: ", style=Style(color=MUTED))
+        text.append(f"{ws.weekday_pct}%", style=Style(color=GREEN, bold=True))
+        text.append(f"  {ws.weekday_commits:,} commits", style=Style(color=MUTED))
+        text.append(f"\n  Weekend: ", style=Style(color=MUTED))
+        text.append(f"{ws.weekend_pct}%", style=Style(color=PURPLE, bold=True))
+        text.append(f"  {ws.weekend_commits:,} commits", style=Style(color=MUTED))
+
+        self.update(text)
+
+
+class HotspotTable(DataTable):
+    """Most-churned files table."""
+
+    def update_data(self, analytics: Analytics) -> None:
+        self.clear(columns=True)
+        self.add_columns("File", "Churn", "Touches")
+        for h in analytics.file_hotspots[:15]:
+            self.add_row(
+                Text(h.path, style=Style(color=CYAN)),
+                Text(f"{h.churn:,}", style=Style(color=RED, bold=True)),
+                Text(str(h.touches), style=Style(color=YELLOW)),
+            )
+
+
 class HuntdApp(App):
     """huntd — your coding fingerprint."""
 
@@ -219,9 +348,9 @@ class HuntdApp(App):
         background: {BG};
         color: {MUTED};
         layout: grid;
-        grid-size: 2 4;
+        grid-size: 2 7;
         grid-gutter: 1;
-        grid-rows: auto auto 1fr 1fr;
+        grid-rows: auto auto 1fr 1fr 1fr 1fr 1fr;
     }}
 
     Header {{
@@ -271,6 +400,39 @@ class HuntdApp(App):
     }}
 
     #activity {{
+        border: round {BORDER};
+        background: {SURFACE};
+        min-height: 10;
+    }}
+
+    #velocity {{
+        border: round {BORDER};
+        background: {SURFACE};
+        min-height: 10;
+    }}
+
+    #lang-evolution {{
+        border: round {BORDER};
+        background: {SURFACE};
+        min-height: 10;
+    }}
+
+    #focus {{
+        border: round {BORDER};
+        background: {SURFACE};
+        min-height: 6;
+        padding: 1 2;
+    }}
+
+    #workday {{
+        border: round {BORDER};
+        background: {SURFACE};
+        min-height: 6;
+        padding: 1 2;
+    }}
+
+    #hotspots {{
+        column-span: 2;
         border: round {BORDER};
         background: {SURFACE};
         min-height: 10;
@@ -350,7 +512,8 @@ class HuntdApp(App):
     def action_refresh(self) -> None:
         """Re-scan repos."""
         # Remove existing dashboard widgets
-        for wid in ["#banner", "#overview", "#heatmap", "#languages", "#repos", "#activity"]:
+        for wid in ["#banner", "#overview", "#heatmap", "#languages", "#repos", "#activity",
+                    "#velocity", "#lang-evolution", "#focus", "#workday", "#hotspots"]:
             try:
                 self.query_one(wid).remove()
             except Exception:
@@ -430,12 +593,23 @@ class HuntdApp(App):
         repos = RepoTable(id="repos")
         activity = ActivityPanel(id="activity")
 
+        velocity = CodeVelocityPanel(id="velocity")
+        lang_evo = LanguageEvolutionPanel(id="lang-evolution")
+        focus = FocusScorePanel(id="focus")
+        workday = WorkdaySplitPanel(id="workday")
+        hotspots = HotspotTable(id="hotspots")
+
         self.mount(banner, before=footer)
         self.mount(overview, before=footer)
         self.mount(heatmap, before=footer)
         self.mount(languages, before=footer)
         self.mount(repos, before=footer)
         self.mount(activity, before=footer)
+        self.mount(velocity, before=footer)
+        self.mount(lang_evo, before=footer)
+        self.mount(focus, before=footer)
+        self.mount(workday, before=footer)
+        self.mount(hotspots, before=footer)
 
         # Set border titles with accents
         overview.border_title = "🐺 Overview"
@@ -443,12 +617,22 @@ class HuntdApp(App):
         languages.border_title = "🔤 Languages"
         repos.border_title = "📦 Repositories"
         activity.border_title = "⚡ Activity"
+        velocity.border_title = "📈 Velocity"
+        lang_evo.border_title = "📈 Language Evolution"
+        focus.border_title = "🎯 Focus Score"
+        workday.border_title = "📅 Weekday vs Weekend"
+        hotspots.border_title = "🔥 File Hotspots"
 
         overview.update_data(analytics)
         heatmap.update_data(analytics)
         languages.update_data(analytics)
         repos.update_data(analytics)
         activity.update_data(analytics)
+        velocity.update_data(analytics)
+        lang_evo.update_data(analytics)
+        focus.update_data(analytics)
+        workday.update_data(analytics)
+        hotspots.update_data(analytics)
 
 
 def run_tui(

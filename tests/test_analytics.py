@@ -4,10 +4,15 @@ from datetime import date, datetime, timedelta, timezone
 
 from huntd.analytics import (
     compute_activity_patterns,
+    compute_code_velocity,
+    compute_file_hotspots,
+    compute_focus_score,
     compute_health_score,
     compute_heatmap,
+    compute_language_evolution,
     compute_languages,
     compute_streaks,
+    compute_workday_split,
 )
 from huntd.git import Commit, FileChange, RepoInfo
 
@@ -178,3 +183,164 @@ def test_health_score_old_repo():
     score = compute_health_score(repo)
     # 20 (90d) + 10 (25 commits) + 15 (readme) + 15 (branches) + 0 (dirty) = 60
     assert score == 60
+
+
+# --- Helpers for v0.3 tests ---
+
+def _make_file_change(days_ago: int, ext: str, added: int = 50, removed: int = 10) -> FileChange:
+    today = date.today()
+    d = today - timedelta(days=days_ago)
+    ts = datetime(d.year, d.month, d.day, 12, 0, 0).astimezone()
+    return FileChange(hash="abc123", timestamp=ts, path=f"file{ext}", ext=ext, added=added, removed=removed)
+
+
+def _make_repo_with_commits(name: str, days_list: list[int]) -> RepoInfo:
+    commits = [_make_commit(d) for d in days_list]
+    return RepoInfo(path=f"/fake/{name}", name=name, commits=commits)
+
+
+def _make_repo_with_file_changes(name: str, changes: list[FileChange]) -> RepoInfo:
+    return RepoInfo(path=f"/fake/{name}", name=name, file_changes=changes)
+
+
+# --- Language Evolution ---
+
+def test_language_evolution_empty():
+    le = compute_language_evolution([])
+    assert le.monthly == {}
+    assert le.top_languages == []
+
+
+def test_language_evolution_groups_by_month():
+    changes = [
+        _make_file_change(0, ".py", added=100),
+        _make_file_change(0, ".js", added=50),
+        _make_file_change(40, ".py", added=200),
+    ]
+    le = compute_language_evolution(changes)
+    assert len(le.monthly) >= 1
+    assert "Python" in le.top_languages
+
+
+def test_language_evolution_top_languages_ordered():
+    changes = [_make_file_change(0, ".py", added=500)] * 3
+    changes += [_make_file_change(0, ".js", added=10)]
+    le = compute_language_evolution(changes)
+    assert le.top_languages[0] == "Python"
+
+
+# --- Code Velocity ---
+
+def test_code_velocity_empty():
+    cv = compute_code_velocity([])
+    assert cv.commits_by_week == {}
+    assert cv.trend == "stable"
+    assert cv.peak_commits == 0
+
+
+def test_code_velocity_groups_by_week():
+    commits = [_make_commit(i) for i in range(14)]
+    cv = compute_code_velocity(commits)
+    assert len(cv.commits_by_week) >= 2
+    assert cv.peak_commits > 0
+    assert cv.peak_week != ""
+
+
+def test_code_velocity_trend_stable_on_short_history():
+    commits = [_make_commit(i * 7) for i in range(3)]
+    cv = compute_code_velocity(commits)
+    assert cv.trend == "stable"
+
+
+# --- Focus Score ---
+
+def test_focus_score_empty():
+    fs = compute_focus_score([])
+    assert fs.avg_repos_per_day == 0.0
+
+
+def test_focus_score_single_repo():
+    repo = _make_repo_with_commits("myproject", [0, 1, 2, 3, 4])
+    fs = compute_focus_score([repo])
+    assert fs.avg_repos_per_day == 1.0
+    assert fs.interpretation == "deep focus"
+
+
+def test_focus_score_multiple_repos():
+    r1 = _make_repo_with_commits("a", [0, 1])
+    r2 = _make_repo_with_commits("b", [0, 2])
+    r3 = _make_repo_with_commits("c", [0])
+    fs = compute_focus_score([r1, r2, r3])
+    assert fs.avg_repos_per_day > 1.0
+    assert fs.most_scattered_day != ""
+
+
+# --- Workday Split ---
+
+def test_workday_split_empty():
+    ws = compute_workday_split([])
+    assert ws.weekday_commits == 0
+    assert ws.weekend_commits == 0
+
+
+def test_workday_split_all_weekday():
+    today = date.today()
+    commits = []
+    for weeks_ago in range(4):
+        d = today - timedelta(days=today.weekday() + weeks_ago * 7)
+        ts = datetime(d.year, d.month, d.day, 10, 0, 0).astimezone()
+        commits.append(Commit("h", "T", "t@t", ts, "s", 10, 5, 1))
+    ws = compute_workday_split(commits)
+    assert ws.weekday_commits == 4
+    assert ws.weekend_commits == 0
+    assert ws.weekday_pct == 100.0
+
+
+def test_workday_split_percentages_sum():
+    commits = [_make_commit(i) for i in range(14)]
+    ws = compute_workday_split(commits)
+    total = ws.weekday_commits + ws.weekend_commits
+    assert total == 14
+    assert abs(ws.weekday_pct + ws.weekend_pct - 100.0) < 0.1
+
+
+# --- File Hotspots ---
+
+def test_file_hotspots_empty():
+    result = compute_file_hotspots([])
+    assert result == []
+
+
+def test_file_hotspots_prefixes_repo_name():
+    fc = FileChange("hash1", datetime.now(timezone.utc), "src/main.py", ".py", 200, 50)
+    repo = _make_repo_with_file_changes("myrepo", [fc])
+    hotspots = compute_file_hotspots([repo])
+    assert hotspots[0].path == "myrepo/src/main.py"
+
+
+def test_file_hotspots_sorted_by_churn():
+    fc1 = FileChange("h1", datetime.now(timezone.utc), "big.py", ".py", 1000, 500)
+    fc2 = FileChange("h2", datetime.now(timezone.utc), "small.py", ".py", 10, 5)
+    repo = _make_repo_with_file_changes("r", [fc1, fc2])
+    hotspots = compute_file_hotspots([repo])
+    assert hotspots[0].path == "r/big.py"
+    assert hotspots[0].churn > hotspots[1].churn
+
+
+def test_file_hotspots_counts_unique_touches():
+    fc1 = FileChange("hash1", datetime.now(timezone.utc), "hot.py", ".py", 100, 0)
+    fc2 = FileChange("hash2", datetime.now(timezone.utc), "hot.py", ".py", 200, 0)
+    repo = _make_repo_with_file_changes("r", [fc1, fc2])
+    hotspots = compute_file_hotspots([repo])
+    assert hotspots[0].touches == 2
+    assert hotspots[0].churn == 300
+
+
+def test_file_hotspots_respects_top_n():
+    changes = [
+        FileChange(f"h{i}", datetime.now(timezone.utc), f"file{i}.py", ".py", i * 10, 0)
+        for i in range(20)
+    ]
+    repo = _make_repo_with_file_changes("r", changes)
+    hotspots = compute_file_hotspots([repo], top_n=5)
+    assert len(hotspots) == 5

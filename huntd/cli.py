@@ -94,6 +94,7 @@ def print_summary(
         CYAN,
         GREEN,
         MUTED,
+        ORANGE,
         PURPLE,
         RED,
         SURFACE,
@@ -231,6 +232,88 @@ def print_summary(
     console.print(Panel(activity, border_style=ACCENT_ACTIVITY, padding=(0, 1)))
     console.print()
 
+    # Code Velocity
+    cv = analytics.code_velocity
+    if cv.commits_by_week:
+        console.print(Rule(f"[bold {YELLOW}]📈 Velocity[/bold {YELLOW}]", style=YELLOW))
+        recent_weeks = list(cv.commits_by_week.keys())[-12:]
+        recent_vals = [cv.commits_by_week[w] for w in recent_weeks]
+        spark = sparkline(recent_vals)
+        trend_color = GREEN if cv.trend == "up" else (RED if cv.trend == "down" else MUTED)
+        trend_arrow = "↑" if cv.trend == "up" else ("↓" if cv.trend == "down" else "~")
+        vel_text = Text()
+        vel_text.append(f"  {spark}", style=f"bold {CYAN}")
+        vel_text.append(f"  ({trend_arrow} {cv.trend})", style=f"bold {trend_color}")
+        vel_text.append(f"    Peak: ", style=MUTED)
+        vel_text.append(f"{cv.peak_week}", style=f"bold {YELLOW}")
+        vel_text.append(f" ({cv.peak_commits} commits)", style=MUTED)
+        console.print(Panel(vel_text, border_style=YELLOW, padding=(0, 1)))
+        console.print()
+
+    # Language Evolution
+    le = analytics.language_evolution
+    if le.monthly and le.top_languages:
+        console.print(Rule(f"[bold {PURPLE}]📈 Language Evolution[/bold {PURPLE}]", style=PURPLE))
+        last_6_keys = sorted(le.monthly.keys())[-6:]
+        evo_table = Table(border_style=SURFACE, show_edge=True, pad_edge=True)
+        evo_table.add_column("Language", style=f"bold {CYAN}")
+        for mk in last_6_keys:
+            evo_table.add_column(mk, justify="right", style=MUTED)
+        evo_table.add_column("Trend", no_wrap=True)
+
+        for lang in le.top_languages[:6]:
+            row_vals = [le.monthly[mk].get(lang, 0) for mk in last_6_keys]
+            spark = sparkline(row_vals) if any(row_vals) else ""
+            evo_table.add_row(
+                lang,
+                *[f"{v:,}" if v else "-" for v in row_vals],
+                Text(spark, style=f"bold {GREEN}"),
+            )
+        console.print(evo_table)
+        console.print()
+
+    # Focus Score
+    fs = analytics.focus_score
+    if fs.avg_repos_per_day > 0:
+        console.print(Rule(f"[bold {CYAN}]🎯 Focus Score[/bold {CYAN}]", style=CYAN))
+        score_color = GREEN if fs.interpretation == "deep focus" else (YELLOW if fs.interpretation == "balanced" else RED)
+        focus_text = Text()
+        focus_text.append(f"  Avg repos/day: ", style=MUTED)
+        focus_text.append(f"{fs.avg_repos_per_day}", style=f"bold {CYAN}")
+        focus_text.append(f"  [{fs.interpretation}]", style=f"bold {score_color}")
+        focus_text.append(f"\n  Most focused:  ", style=MUTED)
+        focus_text.append(f"{fs.most_focused_day}", style=f"bold {GREEN}")
+        focus_text.append(f"    Most scattered: ", style=MUTED)
+        focus_text.append(f"{fs.most_scattered_day}", style=f"bold {YELLOW}")
+        console.print(Panel(focus_text, border_style=CYAN, padding=(0, 1)))
+        console.print()
+
+    # Weekday vs Weekend
+    ws = analytics.workday_split
+    if ws.weekday_commits + ws.weekend_commits > 0:
+        console.print(Rule(f"[bold {ORANGE}]📅 Weekday vs Weekend[/bold {ORANGE}]", style=ORANGE))
+        split_text = Text()
+        split_text.append(f"  Weekday: ", style=MUTED)
+        split_text.append(f"{ws.weekday_pct}%", style=f"bold {GREEN}")
+        split_text.append(f" ({ws.weekday_commits:,} commits, +{ws.weekday_lines:,} lines)", style=MUTED)
+        split_text.append(f"\n  Weekend: ", style=MUTED)
+        split_text.append(f"{ws.weekend_pct}%", style=f"bold {PURPLE}")
+        split_text.append(f" ({ws.weekend_commits:,} commits, +{ws.weekend_lines:,} lines)", style=MUTED)
+        console.print(Panel(split_text, border_style=ORANGE, padding=(0, 1)))
+        console.print()
+
+    # File Hotspots
+    if analytics.file_hotspots:
+        console.print(Rule(f"[bold {RED}]🔥 File Hotspots[/bold {RED}]", style=RED))
+        hotspot_table = Table(border_style=SURFACE, show_edge=True, pad_edge=True)
+        hotspot_table.add_column("File", style=f"bold {CYAN}")
+        hotspot_table.add_column("Churn", justify="right", style=f"bold {RED}")
+        hotspot_table.add_column("Touches", justify="right", style=YELLOW)
+        for h in analytics.file_hotspots[:10]:
+            hotspot_table.add_row(h.path, f"{h.churn:,}", f"{h.touches}")
+        console.print(hotspot_table)
+        console.print()
+
 
 def print_json(
     scan_path: str,
@@ -279,6 +362,32 @@ def print_json(
                 "lines_removed": r.lines_removed,
             }
             for r in analytics.repo_rankings
+        ],
+        "language_evolution": analytics.language_evolution.monthly,
+        "code_velocity": {
+            "commits_by_week": analytics.code_velocity.commits_by_week,
+            "lines_by_week": analytics.code_velocity.lines_by_week,
+            "trend": analytics.code_velocity.trend,
+            "peak_week": analytics.code_velocity.peak_week,
+            "peak_commits": analytics.code_velocity.peak_commits,
+        },
+        "focus_score": {
+            "avg_repos_per_day": analytics.focus_score.avg_repos_per_day,
+            "most_focused_day": analytics.focus_score.most_focused_day,
+            "most_scattered_day": analytics.focus_score.most_scattered_day,
+            "interpretation": analytics.focus_score.interpretation,
+        },
+        "workday_split": {
+            "weekday_commits": analytics.workday_split.weekday_commits,
+            "weekend_commits": analytics.workday_split.weekend_commits,
+            "weekday_pct": analytics.workday_split.weekday_pct,
+            "weekend_pct": analytics.workday_split.weekend_pct,
+            "weekday_lines": analytics.workday_split.weekday_lines,
+            "weekend_lines": analytics.workday_split.weekend_lines,
+        },
+        "file_hotspots": [
+            {"path": h.path, "churn": h.churn, "touches": h.touches}
+            for h in analytics.file_hotspots
         ],
     }
     print(json.dumps(data, indent=2))

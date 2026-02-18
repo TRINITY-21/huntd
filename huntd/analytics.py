@@ -39,6 +39,46 @@ class RepoRanking:
 
 
 @dataclass
+class LanguageEvolution:
+    monthly: dict[str, dict[str, int]] = field(default_factory=dict)
+    top_languages: list[str] = field(default_factory=list)
+
+
+@dataclass
+class CodeVelocity:
+    commits_by_week: dict[str, int] = field(default_factory=dict)
+    lines_by_week: dict[str, int] = field(default_factory=dict)
+    trend: str = "stable"
+    peak_week: str = ""
+    peak_commits: int = 0
+
+
+@dataclass
+class FocusScore:
+    avg_repos_per_day: float = 0.0
+    most_focused_day: str = ""
+    most_scattered_day: str = ""
+    interpretation: str = ""
+
+
+@dataclass
+class WorkdaySplit:
+    weekday_commits: int = 0
+    weekend_commits: int = 0
+    weekday_pct: float = 0.0
+    weekend_pct: float = 0.0
+    weekday_lines: int = 0
+    weekend_lines: int = 0
+
+
+@dataclass
+class FileHotspot:
+    path: str
+    churn: int
+    touches: int
+
+
+@dataclass
 class Analytics:
     total_repos: int = 0
     total_commits: int = 0
@@ -48,6 +88,11 @@ class Analytics:
     languages: dict[str, int] = field(default_factory=dict)
     repo_rankings: list[RepoRanking] = field(default_factory=list)
     activity: ActivityPattern = field(default_factory=ActivityPattern)
+    language_evolution: LanguageEvolution = field(default_factory=LanguageEvolution)
+    code_velocity: CodeVelocity = field(default_factory=CodeVelocity)
+    focus_score: FocusScore = field(default_factory=FocusScore)
+    workday_split: WorkdaySplit = field(default_factory=WorkdaySplit)
+    file_hotspots: list[FileHotspot] = field(default_factory=list)
 
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -280,6 +325,159 @@ def compute_health_score(repo: RepoInfo) -> int:
     return score
 
 
+def compute_language_evolution(all_file_changes: list[FileChange]) -> LanguageEvolution:
+    """Group file changes by month and aggregate lines by language."""
+    if not all_file_changes:
+        return LanguageEvolution()
+
+    monthly: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+
+    for fc in all_file_changes:
+        d = fc.timestamp.astimezone() if fc.timestamp.tzinfo else fc.timestamp
+        key = f"{d.year}-{d.month:02d}"
+        lang = EXT_MAP.get(fc.ext, fc.ext)
+        monthly[key][lang] += fc.added + fc.removed
+
+    sorted_monthly = {k: dict(v) for k, v in sorted(monthly.items())}
+
+    lang_totals: Counter[str] = Counter()
+    for month_langs in sorted_monthly.values():
+        for lang, lines in month_langs.items():
+            lang_totals[lang] += lines
+    top_languages = [lang for lang, _ in lang_totals.most_common(8)]
+
+    return LanguageEvolution(monthly=sorted_monthly, top_languages=top_languages)
+
+
+def compute_code_velocity(all_commits: list[Commit]) -> CodeVelocity:
+    """Group commits by ISO week, detect trend vs prior 4 weeks."""
+    if not all_commits:
+        return CodeVelocity()
+
+    commits_by_week: dict[str, int] = defaultdict(int)
+    lines_by_week: dict[str, int] = defaultdict(int)
+
+    for c in all_commits:
+        d = c.timestamp.astimezone() if c.timestamp.tzinfo else c.timestamp
+        iso = d.isocalendar()
+        key = f"{iso[0]}-W{iso[1]:02d}"
+        commits_by_week[key] += 1
+        lines_by_week[key] += c.insertions + c.deletions
+
+    sorted_weeks = sorted(commits_by_week.keys())
+    commits_by_week = {k: commits_by_week[k] for k in sorted_weeks}
+    lines_by_week = {k: lines_by_week[k] for k in sorted_weeks}
+
+    peak_week = max(commits_by_week, key=commits_by_week.get)
+    peak_commits = commits_by_week[peak_week]
+
+    trend = "stable"
+    if len(sorted_weeks) >= 8:
+        recent_4 = sorted_weeks[-4:]
+        prior_4 = sorted_weeks[-8:-4]
+        recent_avg = sum(commits_by_week[w] for w in recent_4) / 4
+        prior_avg = sum(commits_by_week[w] for w in prior_4) / 4
+        if prior_avg > 0:
+            ratio = recent_avg / prior_avg
+            if ratio >= 1.15:
+                trend = "up"
+            elif ratio <= 0.85:
+                trend = "down"
+
+    return CodeVelocity(
+        commits_by_week=commits_by_week,
+        lines_by_week=lines_by_week,
+        trend=trend,
+        peak_week=peak_week,
+        peak_commits=peak_commits,
+    )
+
+
+def compute_focus_score(repos: list[RepoInfo]) -> FocusScore:
+    """Count unique repos touched per active day."""
+    if not repos:
+        return FocusScore()
+
+    day_repos: dict[date, set[str]] = defaultdict(set)
+    for repo in repos:
+        for c in repo.commits:
+            d = c.timestamp.astimezone().date() if c.timestamp.tzinfo else c.timestamp.date()
+            day_repos[d].add(repo.name)
+
+    if not day_repos:
+        return FocusScore()
+
+    repos_per_day = {d: len(names) for d, names in day_repos.items()}
+    avg = sum(repos_per_day.values()) / len(repos_per_day)
+
+    most_focused = str(min(repos_per_day, key=repos_per_day.get))
+    most_scattered = str(max(repos_per_day, key=repos_per_day.get))
+
+    if avg <= 2:
+        interpretation = "deep focus"
+    elif avg <= 5:
+        interpretation = "balanced"
+    else:
+        interpretation = "scattered"
+
+    return FocusScore(
+        avg_repos_per_day=round(avg, 1),
+        most_focused_day=most_focused,
+        most_scattered_day=most_scattered,
+        interpretation=interpretation,
+    )
+
+
+def compute_workday_split(all_commits: list[Commit]) -> WorkdaySplit:
+    """Split commits into weekday vs weekend."""
+    if not all_commits:
+        return WorkdaySplit()
+
+    weekday_commits = 0
+    weekend_commits = 0
+    weekday_lines = 0
+    weekend_lines = 0
+
+    for c in all_commits:
+        local = c.timestamp.astimezone() if c.timestamp.tzinfo else c.timestamp
+        lines = c.insertions + c.deletions
+        if local.weekday() < 5:
+            weekday_commits += 1
+            weekday_lines += lines
+        else:
+            weekend_commits += 1
+            weekend_lines += lines
+
+    total = weekday_commits + weekend_commits or 1
+    return WorkdaySplit(
+        weekday_commits=weekday_commits,
+        weekend_commits=weekend_commits,
+        weekday_pct=round(weekday_commits / total * 100, 1),
+        weekend_pct=round(weekend_commits / total * 100, 1),
+        weekday_lines=weekday_lines,
+        weekend_lines=weekend_lines,
+    )
+
+
+def compute_file_hotspots(repos: list[RepoInfo], top_n: int = 15) -> list[FileHotspot]:
+    """Find most-churned files across all repos."""
+    churn_map: dict[str, int] = defaultdict(int)
+    touch_map: dict[str, set[str]] = defaultdict(set)
+
+    for repo in repos:
+        for fc in repo.file_changes:
+            full_path = f"{repo.name}/{fc.path}"
+            churn_map[full_path] += fc.added + fc.removed
+            touch_map[full_path].add(fc.hash)
+
+    hotspots = [
+        FileHotspot(path=p, churn=churn, touches=len(touch_map[p]))
+        for p, churn in churn_map.items()
+    ]
+    hotspots.sort(key=lambda h: h.churn, reverse=True)
+    return hotspots[:top_n]
+
+
 def build_analytics(repos: list[RepoInfo]) -> Analytics:
     """Build full analytics from a list of scanned repos."""
     all_commits: list[Commit] = []
@@ -299,4 +497,9 @@ def build_analytics(repos: list[RepoInfo]) -> Analytics:
         languages=languages,
         repo_rankings=compute_repo_rankings(repos),
         activity=compute_activity_patterns(all_commits),
+        language_evolution=compute_language_evolution(all_file_changes),
+        code_velocity=compute_code_velocity(all_commits),
+        focus_score=compute_focus_score(repos),
+        workday_split=compute_workday_split(all_commits),
+        file_hotspots=compute_file_hotspots(repos),
     )
