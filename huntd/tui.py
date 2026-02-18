@@ -13,6 +13,7 @@ from textual.binding import Binding
 from textual.widgets import DataTable, Footer, Header, Label, LoadingIndicator, Static
 from textual_plotext import PlotextPlot
 
+from huntd.achievements import compute_achievements
 from huntd.analytics import Analytics, build_analytics
 from huntd.git import RepoInfo, scan_repo
 from huntd.scanner import find_repos
@@ -340,6 +341,27 @@ class HotspotTable(DataTable):
             )
 
 
+class AchievementsPanel(Static):
+    """Unlocked / locked achievement badges."""
+
+    def update_data(self, analytics: Analytics) -> None:
+        badges = compute_achievements(analytics)
+        text = Text()
+        for i, b in enumerate(badges):
+            if b.unlocked:
+                text.append(f"  {b.icon} {b.name}", style=Style(color=GREEN, bold=True))
+            else:
+                text.append(f"  🔒 {b.name}", style=Style(color=MUTED))
+            text.append(f"  {b.description}", style=Style(color=MUTED))
+            if i < len(badges) - 1:
+                text.append("\n")
+        unlocked = sum(1 for b in badges if b.unlocked)
+        header = Text()
+        header.append(f"  {unlocked}/{len(badges)} unlocked\n\n", style=Style(color=YELLOW, bold=True))
+        header.append_text(text)
+        self.update(header)
+
+
 class HuntdApp(App):
     """huntd — your coding fingerprint."""
 
@@ -348,9 +370,9 @@ class HuntdApp(App):
         background: {BG};
         color: {MUTED};
         layout: grid;
-        grid-size: 2 7;
+        grid-size: 2 8;
         grid-gutter: 1;
-        grid-rows: auto auto 1fr 1fr 1fr 1fr 1fr;
+        grid-rows: auto auto 1fr 1fr 1fr 1fr 1fr auto;
     }}
 
     Header {{
@@ -438,6 +460,14 @@ class HuntdApp(App):
         min-height: 10;
     }}
 
+    #achievements {{
+        column-span: 2;
+        height: auto;
+        border: round {BORDER};
+        background: {SURFACE};
+        padding: 1 2;
+    }}
+
     #loading-container {{
         column-span: 2;
         row-span: 4;
@@ -513,7 +543,8 @@ class HuntdApp(App):
         """Re-scan repos."""
         # Remove existing dashboard widgets
         for wid in ["#banner", "#overview", "#heatmap", "#languages", "#repos", "#activity",
-                    "#velocity", "#lang-evolution", "#focus", "#workday", "#hotspots"]:
+                    "#velocity", "#lang-evolution", "#focus", "#workday", "#hotspots",
+                    "#achievements"]:
             try:
                 self.query_one(wid).remove()
             except Exception:
@@ -598,6 +629,7 @@ class HuntdApp(App):
         focus = FocusScorePanel(id="focus")
         workday = WorkdaySplitPanel(id="workday")
         hotspots = HotspotTable(id="hotspots")
+        achievements = AchievementsPanel(id="achievements")
 
         self.mount(banner, before=footer)
         self.mount(overview, before=footer)
@@ -610,6 +642,7 @@ class HuntdApp(App):
         self.mount(focus, before=footer)
         self.mount(workday, before=footer)
         self.mount(hotspots, before=footer)
+        self.mount(achievements, before=footer)
 
         # Set border titles with accents
         overview.border_title = "🐺 Overview"
@@ -622,6 +655,7 @@ class HuntdApp(App):
         focus.border_title = "🎯 Focus Score"
         workday.border_title = "📅 Weekday vs Weekend"
         hotspots.border_title = "🔥 File Hotspots"
+        achievements.border_title = "🏆 Achievements"
 
         overview.update_data(analytics)
         heatmap.update_data(analytics)
@@ -633,6 +667,7 @@ class HuntdApp(App):
         focus.update_data(analytics)
         workday.update_data(analytics)
         hotspots.update_data(analytics)
+        achievements.update_data(analytics)
 
 
 def run_tui(

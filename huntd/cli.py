@@ -8,6 +8,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from huntd import __version__
+from huntd.achievements import compute_achievements
 from huntd.analytics import DAYS, build_analytics
 from huntd.git import RepoInfo, scan_repo
 from huntd.scanner import find_repos
@@ -314,6 +315,22 @@ def print_summary(
         console.print(hotspot_table)
         console.print()
 
+    # Achievements
+    badges = compute_achievements(analytics)
+    unlocked = [b for b in badges if b.unlocked]
+    console.print(Rule(f"[bold {YELLOW}]🏆 Achievements ({len(unlocked)}/{len(badges)})[/bold {YELLOW}]", style=YELLOW))
+    ach_text = Text()
+    for i, b in enumerate(badges):
+        if b.unlocked:
+            ach_text.append(f"  {b.icon} {b.name}", style=f"bold {GREEN}")
+        else:
+            ach_text.append(f"  🔒 {b.name}", style=f"{MUTED}")
+        ach_text.append(f"  {b.description}", style=f"{MUTED}")
+        if i < len(badges) - 1:
+            ach_text.append("\n")
+    console.print(Panel(ach_text, border_style=YELLOW, padding=(0, 1)))
+    console.print()
+
 
 def print_json(
     scan_path: str,
@@ -388,6 +405,10 @@ def print_json(
         "file_hotspots": [
             {"path": h.path, "churn": h.churn, "touches": h.touches}
             for h in analytics.file_hotspots
+        ],
+        "achievements": [
+            {"name": b.name, "icon": b.icon, "description": b.description, "unlocked": b.unlocked}
+            for b in compute_achievements(analytics)
         ],
     }
     print(json.dumps(data, indent=2))
