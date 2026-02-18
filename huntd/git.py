@@ -63,14 +63,36 @@ def _run_git(repo_path: str, args: list[str], timeout: int = 60) -> str:
         return ""
 
 
-def get_commits(repo_path: str) -> list[Commit]:
+def _filter_args(
+    since: str | None = None,
+    until: str | None = None,
+    author: str | None = None,
+) -> list[str]:
+    """Build extra git log filter arguments."""
+    extra: list[str] = []
+    if since:
+        extra.append(f"--since={since}")
+    if until:
+        extra.append(f"--until={until}")
+    if author:
+        extra.append(f"--author={author}")
+    return extra
+
+
+def get_commits(
+    repo_path: str,
+    *,
+    since: str | None = None,
+    until: str | None = None,
+    author: str | None = None,
+) -> list[Commit]:
     """Extract all commits with stats in a single subprocess call."""
     # Marker at START of each commit so shortstat stays in the same block
     marker = COMMIT_SEP
     fmt = f"{marker}%n%H%n%an%n%ae%n%aI%n%s"
     output = _run_git(repo_path, [
         "log", "--all", f"--pretty=format:{fmt}", "--shortstat",
-    ])
+    ] + _filter_args(since, until, author))
     if not output.strip():
         return []
 
@@ -111,12 +133,18 @@ def get_commits(repo_path: str) -> list[Commit]:
     return commits
 
 
-def get_file_stats(repo_path: str) -> list[FileChange]:
+def get_file_stats(
+    repo_path: str,
+    *,
+    since: str | None = None,
+    until: str | None = None,
+    author: str | None = None,
+) -> list[FileChange]:
     """Extract per-file line changes for language breakdown."""
     fmt = "%H %aI"
     output = _run_git(repo_path, [
         "log", "--all", f"--pretty=format:{fmt}", "--numstat",
-    ])
+    ] + _filter_args(since, until, author))
     if not output.strip():
         return []
 
@@ -202,9 +230,15 @@ def get_repo_info(repo_path: str) -> RepoInfo:
     return info
 
 
-def scan_repo(repo_path: str) -> RepoInfo:
+def scan_repo(
+    repo_path: str,
+    *,
+    since: str | None = None,
+    until: str | None = None,
+    author: str | None = None,
+) -> RepoInfo:
     """Full scan of a single repo — returns RepoInfo with commits and file changes."""
     info = get_repo_info(repo_path)
-    info.commits = get_commits(repo_path)
-    info.file_changes = get_file_stats(repo_path)
+    info.commits = get_commits(repo_path, since=since, until=until, author=author)
+    info.file_changes = get_file_stats(repo_path, since=since, until=until, author=author)
     return info
