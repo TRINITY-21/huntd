@@ -167,10 +167,7 @@ def render_heatmap(matrix: list[list[int]], day_labels: bool = True) -> Text:
 
     for row_idx, row in enumerate(matrix):
         if day_labels:
-            if row_idx % 2 == 0:
-                text.append(f" {days[row_idx]} ", style=Style(color=MUTED))
-            else:
-                text.append("     ", style=Style(color=MUTED))
+            text.append(f" {days[row_idx]} ", style=Style(color=MUTED))
 
         for count in row:
             char, color = heatmap_block(count)
